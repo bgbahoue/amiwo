@@ -1,4 +1,4 @@
-//! # Amiwô - Core API Documentation
+//! # Amiwô - API Documentation
 //!
 //! Hello, and welcome to the core Amiwô API documentation!
 //!
