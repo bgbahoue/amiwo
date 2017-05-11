@@ -1,0 +1,12 @@
+[package]
+name = "amiwo"
+version = "0.0.1"
+authors = ["bgbahoue <bgbahoue@gmail.com>"]
+
+[dependencies]
+log = "0.3.7"
+rocket = "0.2.6"
+rocket_codegen = "0.2.6"
+
+[dev-dependencies]
+rocket = { version = "0.2.6", features = ["testing"] }
