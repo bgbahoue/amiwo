@@ -7,7 +7,7 @@ repository = "https://github.com/bgbahoue/amiwo"
 documentation = "https://github.com/bgbahoue/amiwo"
 readme = "README.md"
 #categories = ["web-programming::http-server", "development-tools"]
-license = "MIT License"
+license = "MIT"
 
 [dependencies]
 log = "0.3.7"
