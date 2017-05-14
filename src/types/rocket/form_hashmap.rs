@@ -1,3 +1,8 @@
+//! File holding the FormHashMap type and associated tests
+//!
+//! Author: [Boris](mailto:boris@humanenginuity.com)
+//! Version: 1.1
+
 // =======================================================================
 // ATTRIBUTES
 // =======================================================================
@@ -6,17 +11,18 @@
 // =======================================================================
 // LIBRARY IMPORTS
 // =======================================================================
+use std::collections::HashMap;
+use std::error::Error;
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use std::io::Read;
+use std::marker::PhantomData;
 
 use rocket;
 use rocket::{ Request, Data };
 use rocket::data::FromData;
-use rocket::http::{ ContentType, Status };
+use rocket::http::Status;
+use rocket::outcome::IntoOutcome;
 use rocket::request::{ FromForm, FromFormValue, FormItems };
-
-use std::collections::HashMap;
 
 use types::OneOrMany;
 
@@ -87,11 +93,6 @@ pub struct FormHashMap<'f> {
     _phantom: PhantomData<&'f String>,
 }
 
-enum FormResult<T> {
-    Ok(T),
-    Invalid(String)
-}
-
 impl<'f> FormHashMap<'f> {
     /// Get a reference for the value (or values) associated with `key`.
     pub fn get(&'f self, key: &str) -> Option<&OneOrMany<String>> {
@@ -119,7 +120,7 @@ impl<'f> FormHashMap<'f> {
     // `form_string` value should never be moved away. We can enforce that
     // easily by 1) not making `form_string` public, and 2) not exposing any
     // `&mut self` methods that could modify `form_string`.
-    fn new(form_string: String) -> FormResult<Self> {
+    fn new(form_string: String) -> Result<Self, String> {
         let long_lived_string: &'f str = unsafe {
             ::std::mem::transmute(form_string.as_str())
         };
@@ -134,15 +135,13 @@ impl<'f> FormHashMap<'f> {
 
         if !parsing_errors.is_empty() {
             // Parsing errors => fail with invalid result
-            error!("::MODEL::ROCKET::FORM_HASMAP::NEW::WARNING Form string {} couldn't be successfully parsed", form_string);
-            return FormResult::Invalid(form_string);
+            return Err(format!("::MODEL::ROCKET::FORM_HASMAP::NEW::WARNING Unable to parse form string {}", form_string));
         }
         if !items.completed() {
             warn!("::MODEL::ROCKET::FORM_HASMAP::NEW::WARNING Form string {} couldn't be completely parsed", form_string);
-            warn!("Items = {:?}", items.collect::<Vec<_>>());
         }
 
-        FormResult::Ok(FormHashMap {
+        Ok(FormHashMap {
             form_string: form_string,
             form_hash: FormItems::from(long_lived_string).by_ref()
                             .map(|(key, value)| (key, String::from_form_value(value)))
@@ -162,7 +161,7 @@ impl<'f> FormHashMap<'f> {
 /// Parses a `FormHashMap` from incoming POST/... form data.
 ///
 /// - If the content type of the request data is not
-/// `application/x-www-form-urlencoded` or `application/json`, `Forward`s the request.
+/// `application/x-www-form-urlencoded`, `Forward`s the request.
 /// - If the form string is malformed, a `Failure` with status code 
 /// `BadRequest` is returned. 
 /// - Finally, if reading the incoming stream fails, returns a `Failure` with status code
@@ -171,33 +170,31 @@ impl<'f> FormHashMap<'f> {
 ///
 /// All relevant warnings and errors are written to the console
 impl<'f> FromData for FormHashMap<'f> {
-    type Error = Option<String>;
+    type Error = String;
 
     fn from_data(request: &Request, data: Data) -> rocket::data::Outcome<Self, Self::Error> {
         // TODO add support for application/json
-        let form_content_type = ContentType::new("application", "x-www-form-urlencoded");
-        if request.content_type() != Some(form_content_type) {
-            warn!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::WARNING Form data does not have form content type.");
+        if !request.content_type().map_or(false, |ct| ct.is_form()) {
+            error!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::WARNING Form data does not have form content type.");
             return rocket::Outcome::Forward(data);
         }
 
-        let mut form_string = String::new();
-        let mut stream = data.open().take(32768); 
-        if let Err(e) = stream.read_to_string(&mut form_string) {
-            error!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::ERROR IO Error: {:?}", e);
-            rocket::Outcome::Failure((Status::InternalServerError, None))
-        } else {
-            match FormHashMap::new(form_string) {
-                FormResult::Ok(map) => {
-                    info!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::INFO Successfully parsed input data into {:?}.", map);
-                    rocket::Outcome::Success(map)
-                },
-                FormResult::Invalid(invalid_string) => {
-                    error!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::ERROR The request's form string '{}' was malformed.", invalid_string);
-                    rocket::Outcome::Failure((Status::BadRequest, Some(invalid_string)))
-                },
-            }
-        }
+        let size_limit = rocket::config::active()
+            .and_then(|c| c.extras.get("limits.application")) // TODO: remove placeholder when upgrading to rocket version > 0.2.6
+            // .and_then(|c| c.limits.get("application") // In next version
+            .and_then(|limit| limit.as_integer())
+            .unwrap_or(32768) as u64;
+
+        let mut buffer = String::new();
+        data.open()
+            .take(size_limit)
+            .read_to_string(&mut buffer)
+            .or_else(|err| Err(format!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::ERROR IO Error: {}", err.description())) )
+            .and_then(|_| FormHashMap::new(buffer)) // Note: if ok, read_to_string() returns how many bytes where read 
+            .or_else(|error_message| {
+                error!("{}", error_message);
+                Err(error_message)
+            }).into_outcome() // Note: trait implemented by Rocket FromData for Result<S,E> `fn into_outcome(self, status: Status) -> Outcome<S, E>`
     }
 }
 
@@ -215,17 +212,14 @@ impl<'f> FromForm<'f> for FormHashMap<'f> {
     type Error = (Status, Option<String>);
 
     fn from_form_items(items: &mut FormItems<'f>) -> Result<Self, Self::Error> {
-        let form_string = items.inner_str().to_string();
-        match FormHashMap::new(form_string) {
-            FormResult::Ok(map) => {
+        FormHashMap::new(items.inner_str().to_string())
+            .map(|map| {
                 info!("::MODEL::ROCKET::FORM_HASMAP::FROM_FORM_ITEMS::INFO Successfully parsed input data => {:?}", map);
-                Ok(map)
-            },
-            FormResult::Invalid(invalid_string) => {
+                map
+            }).map_err(|invalid_string| {
                 error!("::MODEL::ROCKET::FORM_HASMAP::FROM_FORM_ITEMS::ERROR The request's form string '{}' was malformed.", invalid_string);
-                Err((Status::BadRequest, Some(invalid_string)))
-            },
-        }
+                (Status::BadRequest, Some(invalid_string))
+            })
     }
 }
 
@@ -244,7 +238,6 @@ mod test {
     #![allow(unmounted_route)]
 
     use super::FormHashMap;
-    use super::FormResult;
     use types::OneOrMany;
 
     use rocket;
@@ -256,13 +249,11 @@ mod test {
         let form_string = "a=b1&a=b2&b=c";
 
         match FormHashMap::new(form_string.to_string()) {
-            FormResult::Ok(map) => {
-                println!("Map = {:?}", map);
-                println!("Map[{}] = {:?}", "a", map.get("a"));
+            Ok(map) => {
                 assert_eq!(map.get("a"), Some(&OneOrMany::Many(vec!["b1".to_string(), "b2".to_string()])));
                 assert_eq!(map.get("b"), Some(&OneOrMany::One("c".to_string())));
             },
-            FormResult::Invalid(invalid_string) => {
+            Err(invalid_string) => {
                 panic!("Unable to parse {}", invalid_string);
             }
         }
@@ -272,8 +263,6 @@ mod test {
     fn test_post_route() {
         #[post("/test", data= "<params>")]
         fn test_route(params: FormHashMap) -> &'static str {
-            println!("Map = {:?}", params);
-            println!("Map[{}] = {:?}", "a", params.get("a"));
             assert_eq!(params.get("a"), Some(&OneOrMany::Many(vec!["b1".to_string(), "b2".to_string()])));
             assert_eq!(params.get("b"), Some(&OneOrMany::One("c".to_string())));
             "It's working !"
@@ -297,8 +286,6 @@ mod test {
     fn test_get_route() {
         #[get("/test?<params>")]
         fn test_route(params: FormHashMap) -> &'static str {
-            println!("Map = {:?}", params);
-            println!("Map[{}] = {:?}", "a", params.get("a"));
             assert_eq!(params.get("a"), Some(&OneOrMany::Many(vec!["b1".to_string(), "b2".to_string()])));
             assert_eq!(params.get("b"), Some(&OneOrMany::One("c".to_string())));
             "It's working !"
@@ -320,8 +307,6 @@ mod test {
     fn test_get_qs_with_dot() {
         #[get("/test?<params>")]
         fn test_route(params: FormHashMap) -> &'static str {
-            println!("Map = {:?}", params);
-            println!("Map[{}] = {:?}", "v", params.get("v"));
             assert_eq!(params.get("v"), Some(&OneOrMany::One("4.7.0".to_string())));
             "It's working !"
         }
