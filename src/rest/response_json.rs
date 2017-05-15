@@ -133,7 +133,7 @@ impl<T: DeserializeOwned> ResponseJSON<T> {
     /// Check if the JSON described as a String is an OK JSON
     pub fn is_ok_json(json_as_str: &str) -> bool {
         match serde_json::from_str::<Value>(json_as_str) {
-            Ok(json) => util::has_properties(&json, &["success", "http_code"]) 
+            Ok(json) => util::contains_keys(&json, &["success", "http_code"]) 
                         && json["success"] == Value::Bool(true) 
                         && json["method"] == Value::Null 
                         && json["resource"] == Value::Null 
