@@ -1,11 +1,12 @@
 // =======================================================================
 // LIBRARY IMPORTS
 // =======================================================================
+use rocket;
 use rocket::{ Request, Data };
-use rocket::data::Outcome;
+use rocket::data::{ FromData, Outcome };
+use rocket::http::Status;
 use rocket::outcome::IntoOutcome;
 use rocket::response::Responder;
-use rocket_contrib;
 
 use serde;
 use ::serde::de::Deserialize;
@@ -13,10 +14,10 @@ use serde::de::DeserializeOwned;
 use serde_json;
 use serde_json::Value;
 
-use util;
+use util::ContainsKeys;
 
 // =======================================================================
-// STRUCT DEFINITION
+// STRUCT & TRAIT DEFINITION
 // =======================================================================
 /// JSON wrapper for a JSON response from a REST route
 /// It wraps an optional generic type `T` that just needs to implement [serde's Deserialize](https://docs.serde.rs/serde/de/trait.Deserializer.html)
@@ -36,12 +37,24 @@ pub struct ResponseJSON<T: DeserializeOwned> {
     method: Option<String>,
 }
 
+/// Test if the underlying structure is a valid ResponseJSON
+pub trait IsResponseJSON {
+    fn is_valid_json(&self) -> bool;
+    fn is_ok_json(&self) -> bool;
+    fn is_error_json(&self) -> bool;
+}
+
+// =======================================================================
+// STRUCT IMPLEMENTATION
+// =======================================================================
 /// Default values for ResponseJSON are
 ///     - data: None
 ///     - message: None
 ///     - resource: None
 ///     - method: None
-impl<T: DeserializeOwned> Default for ResponseJSON<T> {
+impl<T> Default for ResponseJSON<T>
+    where T: DeserializeOwned
+{
     fn default () -> ResponseJSON<T> {
         ResponseJSON {
             success: true,
@@ -123,36 +136,76 @@ impl<T: DeserializeOwned> ResponseJSON<T> {
         }
         self
     }
+}
 
+impl<T> IsResponseJSON for ResponseJSON<T>
+    where T: DeserializeOwned
+{
+    /// Check if the JSON described as a String is a valid ResponseJSON
+    fn is_valid_json(&self) -> bool {
+        true
+    }
+    
     /// Check if the JSON described as a String is an Error JSON
-    pub fn is_error_json(json_as_str: &str) -> bool
+    fn is_error_json(&self) -> bool
     {
-        !Self::is_ok_json(json_as_str)
+        !self.is_ok_json()
     }
 
     /// Check if the JSON described as a String is an OK JSON
-    pub fn is_ok_json(json_as_str: &str) -> bool {
-        match serde_json::from_str::<Value>(json_as_str) {
-            Ok(json) => util::contains_keys(&json, &["success", "http_code"]) 
-                        && json["success"] == Value::Bool(true) 
-                        && json["method"] == Value::Null 
-                        && json["resource"] == Value::Null 
-                        && json["message"] == Value::Null, 
-            Err(_) => false,
-        }
-    }
-
-    /// Check if the current object is an Error JSON
-    pub fn is_error(&self) -> bool {
-        self.success == false
-    }
-
-    /// Check if the current object is an OK JSON
-    pub fn is_ok(&self) -> bool {
-        self.success == true
+    fn is_ok_json(&self) -> bool {
+        self.success == true &&
+        self.method == None &&
+        self.message == None &&
+        self.resource == None
     }
 }
 
+impl IsResponseJSON for serde_json::map::Map<String, Value> {
+    fn is_valid_json(&self) -> bool {
+        self.contains_keys(&["success", "http_code"]) 
+    }
+
+    fn is_ok_json(&self) -> bool {
+        self.is_valid_json() && 
+        self["success"] == Value::Bool(true) &&
+        self.get("http_code").is_some() && self.get("http_code").unwrap().is_number() &&
+        self["method"] == Value::Null &&
+        self["resource"] == Value::Null &&
+        self["message"] == Value::Null
+    }
+
+    fn is_error_json(&self) -> bool {
+        !self.is_ok_json()
+    }
+}
+
+/// ResponseJSON<T> can be created from a serde_json::JSON typed as `serde_json::Value`
+/// If the input JSON is like { success: false, http_code, message, resource, method } it creates an Error ResponseJSON 
+/// Else it creates an Ok ResponseJSON with it's data property set to the input JSON
+impl From<serde_json::Value> for ResponseJSON<serde_json::Value>
+{
+    fn from(json: serde_json::Value) -> Self {
+        json.as_object() // Option<&Map<String, Value>>
+            .map_or_else( // compute the data to be wrapped in the ResponseJSON
+                // None => not an object
+                || Err(&json),
+                // Some(json) => check if is a valid ResponseJSON
+                |obj| {
+                    if obj.is_valid_json() {
+                        Ok(
+                            ResponseJSON::ok()
+                                .http_code(obj["http_code"].as_u64().unwrap() as u16)
+                                .data(obj["data"])
+                                .finalize()
+                        )
+                    } else {
+                        Err(&*obj as serde_json::Value)
+                    }
+                }
+            ).unwrap_or_else(|data| ResponseJSON::ok().data(data).finalize() )
+    }
+}
 /*
 /// Implement Rocket's FormData to parse a ResponseJSON from incoming POST/... form data.
 ///
@@ -182,7 +235,9 @@ impl<T: DeserializeOwned> FromData for ResponseJSON<T> {
 
     }
 }
+*/
 
+/*
 /// Serializes the wrapped value into JSON. Returns a response with Content-Type
 /// JSON and a fixed-size body with the serialized value. If serialization
 /// fails, an `Err` of `Status::InternalServerError` is returned.
@@ -198,34 +253,12 @@ impl<T: Serialize> Responder<'static> for JSON<T> {
 }
 */
 
-/*
-/// ResponseJSON<T> can be created from a serde_json::JSON typed as `serde_json::Value`
-/// If the input JSON is like { success: false, http_code, message, resource, method } it creates an Error ResponseJSON 
-/// Else it creates an Ok ResponseJSON with it's data property set to the input JSON
-impl From<serde_json::Value> for ResponseJSON<T>
-    where T: Deserialize
-{
-    fn from(json: serde_json::JSON<T>) -> Self {
-        match serde_json::from_str::<serde_json::Value>(json.to_string()) {
-            Ok(json) => {
-                if ResponseJSON::is_error_json(&json)
-            },
-            Err(err) => {
-
-            },
-        }
-    }
-}
-*/
-
 // =======================================================================
 // UNIT TESTS
 // =======================================================================
 #[cfg(test)]
 mod tests {
     use super::ResponseJSON;
-    use serde_json;
-    use serde_json::Value;
 
     #[test]
     fn test_is_ok_and_error_json() {
@@ -267,8 +300,8 @@ mod tests {
         assert_eq!(json.method, None);
         assert_eq!(json.resource, None);
         
-        assert_eq!(json.is_ok(), true);
-        assert_eq!(json.is_error(), false);
+        assert_eq!(json.is_ok_json(), true);
+        assert_eq!(json.is_error_json(), false);
     }
 
     #[test]
@@ -288,10 +321,12 @@ mod tests {
         assert_eq!(json.method, Some("GET".to_string()));
         assert_eq!(json.resource, Some("some path".to_string()));
 
-        assert_eq!(json.is_ok(), false);
-        assert_eq!(json.is_error(), true);
+        assert_eq!(json.is_ok_json(), false);
+        assert_eq!(json.is_error_json(), true);
     }
 
-    // TODO add test from Serde JSON
+    // TODO add test `from` Serde JSON
+    // TODO add tests for Serde's implem of isResponseJSON
+
     // TODO add test with POST & GET routes taking a ResponseJSON as param
 }   
