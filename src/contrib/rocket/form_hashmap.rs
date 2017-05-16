@@ -234,7 +234,7 @@ impl<'f> Debug for FormHashMap<'f> {
 // TESTS
 // =======================================================================
 #[cfg(test)]
-mod test {
+mod tests {
     #![allow(unmounted_route)]
 
     use super::FormHashMap;
