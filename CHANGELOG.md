@@ -1,4 +1,4 @@
-# Version 0.1.0 (May 15, 2017)
+# Version 0.1.0 (May 19, 2017)
 - Created `amiwo::contrib` to hold contribution to other crates (currently rocket); moved `FormHashMap` to that module
 - Added `contrib::rocket::ResponseJSON` that can be used as a parameter and response with Rocket
 
