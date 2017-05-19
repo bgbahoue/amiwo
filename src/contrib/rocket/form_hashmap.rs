@@ -135,10 +135,10 @@ impl<'f> FormHashMap<'f> {
 
         if !parsing_errors.is_empty() {
             // Parsing errors => fail with invalid result
-            return Err(format!("::MODEL::ROCKET::FORM_HASMAP::NEW::WARNING Unable to parse form string {}", form_string));
+            return Err(format!("::AMIWO::CONTRIB::ROCKET::FORM_HASMAP::NEW::WARNING Unable to parse form string {}", form_string));
         }
         if !items.completed() {
-            warn!("::MODEL::ROCKET::FORM_HASMAP::NEW::WARNING Form string {} couldn't be completely parsed", form_string);
+            warn!("::AMIWO::CONTRIB::ROCKET::FORM_HASMAP::NEW::WARNING Form string {} couldn't be completely parsed", form_string);
         }
 
         Ok(FormHashMap {
@@ -175,7 +175,7 @@ impl<'f> FromData for FormHashMap<'f> {
     fn from_data(request: &Request, data: Data) -> rocket::data::Outcome<Self, Self::Error> {
         // TODO add support for application/json
         if !request.content_type().map_or(false, |ct| ct.is_form()) {
-            error!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::WARNING Form data does not have form content type.");
+            error!("::AMIWO::CONTRIB::ROCKET::FORM_HASMAP::FROM_DATA::WARNING Form data does not have form content type.");
             return rocket::Outcome::Forward(data);
         }
 
@@ -189,7 +189,7 @@ impl<'f> FromData for FormHashMap<'f> {
         data.open()
             .take(size_limit)
             .read_to_string(&mut buffer)
-            .or_else(|err| Err(format!("::MODEL::ROCKET::FORM_HASMAP::FROM_DATA::ERROR IO Error: {}", err.description())) )
+            .or_else(|err| Err(format!("::AMIWO::CONTRIB::ROCKET::FORM_HASMAP::FROM_DATA::ERROR IO Error: {}", err.description())) )
             .and_then(|_| FormHashMap::new(buffer)) // Note: if ok, read_to_string() returns how many bytes where read 
             .or_else(|error_message| {
                 error!("{}", error_message);
@@ -214,10 +214,10 @@ impl<'f> FromForm<'f> for FormHashMap<'f> {
     fn from_form_items(items: &mut FormItems<'f>) -> Result<Self, Self::Error> {
         FormHashMap::new(items.inner_str().to_string())
             .map(|map| {
-                info!("::MODEL::ROCKET::FORM_HASMAP::FROM_FORM_ITEMS::INFO Successfully parsed input data => {:?}", map);
+                info!("::AMIWO::CONTRIB::ROCKET::FORM_HASMAP::FROM_FORM_ITEMS::INFO Successfully parsed input data => {:?}", map);
                 map
             }).map_err(|invalid_string| {
-                error!("::MODEL::ROCKET::FORM_HASMAP::FROM_FORM_ITEMS::ERROR The request's form string '{}' was malformed.", invalid_string);
+                error!("::AMIWO::CONTRIB::ROCKET::FORM_HASMAP::FROM_FORM_ITEMS::ERROR The request's form string '{}' was malformed.", invalid_string);
                 (Status::BadRequest, Some(invalid_string))
             })
     }
@@ -236,6 +236,7 @@ impl<'f> Debug for FormHashMap<'f> {
 #[cfg(test)]
 mod tests {
     #![allow(unmounted_route)]
+    #![allow(non_snake_case)]
 
     use super::FormHashMap;
     use types::OneOrMany;
@@ -245,7 +246,7 @@ mod tests {
     use rocket::http::{ ContentType, Method, Status };
 
     #[test]
-    fn test_new() {
+    fn FormHashMap_test_new() {
         let form_string = "a=b1&a=b2&b=c";
 
         match FormHashMap::new(form_string.to_string()) {
@@ -260,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn test_post_route() {
+    fn FormHashMap_test_post_route() {
         #[post("/test", data= "<params>")]
         fn test_route(params: FormHashMap) -> &'static str {
             assert_eq!(params.get("a"), Some(&OneOrMany::Many(vec!["b1".to_string(), "b2".to_string()])));
@@ -283,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_route() {
+    fn FormHashMap_test_get_route() {
         #[get("/test?<params>")]
         fn test_route(params: FormHashMap) -> &'static str {
             assert_eq!(params.get("a"), Some(&OneOrMany::Many(vec!["b1".to_string(), "b2".to_string()])));
@@ -304,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_qs_with_dot() {
+    fn FormHashMap_test_get_qs_with_dot() {
         #[get("/test?<params>")]
         fn test_route(params: FormHashMap) -> &'static str {
             assert_eq!(params.get("v"), Some(&OneOrMany::One("4.7.0".to_string())));
@@ -322,13 +323,6 @@ mod tests {
         assert_eq!(response.status(), Status::Ok);
         assert_eq!(body_str, Some("It's working !".to_string()));
     }
-
-    // TODO: test json
-    /*
-    /// let req = MockRequest::new(Post, "/")
-    ///     .header(ContentType::JSON)
-    ///     .body(r#"{ "key": "value", "array": [1, 2, 3], }"#);
-    */
 
     // TODO: add test lifetime
 }
