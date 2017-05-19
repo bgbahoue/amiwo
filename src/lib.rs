@@ -33,13 +33,10 @@
 
 #[macro_use] extern crate log;
 
-// Contribution to third party modules
-//  - Serde
-#[cfg(feature = "amiwo_serde")]
 extern crate serde;
-#[cfg(feature = "amiwo_serde")]
 #[macro_use] extern crate serde_json;
 
+// Contribution to third party modules
 //  - Rocket
 #[cfg(feature = "amiwo_rocket")]
 extern crate rocket;
