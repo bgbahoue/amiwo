@@ -168,6 +168,15 @@ impl ResponseJSON {
         serde_json::from_reader(reader)
             .map( |value : Value| Self::from_serde_value(value) )
     }
+
+    /// Deserialize a ResponseJSON from a Rocket's response ('s body)
+    pub fn from_rocket_response(&response: Response) -> ResponseJSON {
+        response.body()
+            .map_or(
+                ResponseJSON::error().message("Unable to retrieve content from Response"),
+                |body| ResponseJSON::from_reader(body.into_inner()).unwrap_or_else(|err| ResponseJSON::error().message(err.description().to_string()))
+            );
+    }
   
     /// Consumes the ResponseJSON wrapper and returns the wrapped item.
     // Note: Contrary to `serde_json::to_string()`, serialization can't fail.
