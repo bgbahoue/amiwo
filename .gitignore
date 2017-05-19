@@ -7,3 +7,6 @@ Cargo.lock
 
 # Remove OSX junk files
 **/.DS_Store
+
+# IDE config files
+.vscode
