@@ -1,22 +1,50 @@
 //! # Amiwô - API Documentation
 //!
 //! Hello, and welcome to the core Amiwô API documentation!
+//! This crate contains both various utility functions & types 
+//! that I used across several applications as well as
+//! contribution to other third party modules
 //!
-//! ## Libraries
+//! # Structure
+//! Each module in this library is held behind a feature flag. 
+//! The present feature list is below, with an asterisk next to 
+//! the features that are enabled by default:
 //!
-//! - [Types](/types) - Various types commonly used.
+//! * "rest" => Rocket extension
+//! * "json" => Serde extension
+//!
+//! The recommend way to include features from this crate via Cargo in your
+//! project is by adding a `[dependencies.amiwo]` section to your
+//! `Cargo.toml` file, setting `default-features` to false, and specifying
+//! features manually. For example, to use the Rocket module, you would add:
+//!
+//! ```toml,ignore
+//! [dependencies.amiwo]
+//! version = "*"
+//! default-features = false
+//! features = ["rest"]
+//! ```
+//!
+//! This crate is expected to grow with time, adding new elements to outside crates
+
 #![feature(use_extern_macros)]
 #![feature(plugin)]
 #![plugin(rocket_codegen)]
 
 #[macro_use] extern crate log;
+
+// Contribution to third party modules
+//  - Serde
+#[cfg(feature = "amiwo_serde")]
 extern crate serde;
-extern crate serde_json;
-#[macro_use] extern crate serde_derive;
+#[cfg(feature = "amiwo_serde")]
+#[macro_use] extern crate serde_json;
 
+//  - Rocket
+#[cfg(feature = "amiwo_rocket")]
 extern crate rocket;
-extern crate rocket_contrib;
 
+// Amiwo specific modules
+pub mod contrib;
 pub mod types;
 pub mod util;
-pub mod rest;

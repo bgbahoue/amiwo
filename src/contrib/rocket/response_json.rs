@@ -4,29 +4,27 @@
 //! Version: 1.1
 //!
 //! ## Release notes
+//! - v1.1 : changed `data` to Value instead of &Value
 //! - v1.0 : creation
 
 // =======================================================================
 // LIBRARY IMPORTS
 // =======================================================================
+use std::io::Read;
+use std::string::ToString;
+
 use rocket;
-use rocket::{ Request, Data };
+use rocket::{ Data, Request, Response };
+use rocket::response::content;
 use rocket::data::{ FromData, Outcome };
 use rocket::http::Status;
 use rocket::outcome::IntoOutcome;
 use rocket::response::Responder;
 
-use serde;
-use serde::de::Deserialize;
 use serde_json;
 use serde_json::Value;
 
 use util::ContainsKeys;
-
-// =======================================================================
-// CONSTANTS
-// =======================================================================
-static NULL: Value = Value::Null;
 
 // =======================================================================
 // STRUCT & TRAIT DEFINITION
@@ -40,14 +38,14 @@ static NULL: Value = Value::Null;
 /// #[get("/")]
 /// fn index() -> ResponseJSON<T> { ... }
 /// ```
-#[derive(Debug)]
-pub struct ResponseJSON<'v> {
-    success: bool,
-    http_code: u16,
-    data: &'v Value,
-    message: Option<String>, // required for error JSON
-    resource: Option<String>,
-    method: Option<String>,
+#[derive(Clone, Debug)]
+pub struct ResponseJSON {
+    pub success: bool,
+    pub http_code: u16,
+    pub data: Value,
+    pub message: Option<String>, // required for error JSON
+    pub resource: Option<String>,
+    pub method: Option<String>,
 }
 
 /// Test if the underlying structure is a valid ResponseJSON
@@ -60,35 +58,13 @@ pub trait IsResponseJSON {
 // =======================================================================
 // STRUCT IMPLEMENTATION
 // =======================================================================
-/// Default values for ResponseJSON are
-///     - success: true
-///     - http_code: 200
-///     - data: Value::Null
-///     - message: None
-///     - resource: None
-///     - method: None
-impl<'v> Default for ResponseJSON<'v>
-{
-    fn default () -> ResponseJSON<'v> {
-        ResponseJSON {
-            success: true,
-            http_code: 200,
-            data: &NULL, // Returns a reference to `NULL` where its `'static` lifetime is coerced to 'v' 
-            message: None,
-            resource: None,
-            method: None,
-        }
-    }
-}
-
-impl<'v> ResponseJSON<'v>
-{
+impl ResponseJSON {
     // Create an empty OK ResponseJSON
-    pub fn ok() -> ResponseJSON<'v> {
+    pub fn ok() -> ResponseJSON {
         ResponseJSON {
             success: true,
             http_code: 200,
-            data: &NULL, // Returns a reference to `NULL` where its `'static` lifetime is coerced to 'v' 
+            data: Value::Null,
             message: None,
             resource: None,
             method: None,
@@ -96,11 +72,11 @@ impl<'v> ResponseJSON<'v>
     }
 
     // Create an empty OK ResponseJSON
-    pub fn error() -> ResponseJSON<'v> {
+    pub fn error() -> ResponseJSON {
         ResponseJSON {
             success: false,
             http_code: 500,
-            data: &NULL, // Returns a reference to `NULL` where its `'static` lifetime is coerced to 'v' 
+            data: Value::Null,
             message: Some("Unexpected error".to_string()),
             resource: None,
             method: None,
@@ -108,47 +84,46 @@ impl<'v> ResponseJSON<'v>
     }
 
     /// Set the HTTP Code of this ResponseJSON
-    pub fn http_code(mut self, code: u16) -> ResponseJSON<'v> {
+    pub fn http_code(mut self, code: u16) -> ResponseJSON {
         self.http_code = code;
         self
     }
 
     /// Set the data of this ResponseJSON
-    pub fn data(mut self, ref_data: &'v Value) -> ResponseJSON<'v> 
-    {
-        self.data = ref_data;
+    pub fn data(mut self, data: Value) -> ResponseJSON {
+        self.data = data;
         self
     }
 
     /// Set the error message.
     /// For Error JSON only (does nothing if `success == ok`)    
-    pub fn message(mut self, string: String) -> ResponseJSON<'v> {
+    pub fn message(mut self, string: String) -> ResponseJSON {
         if !self.success {
             self.message = Some(string);
         } else {
-            warn!("::AMIWO::RESPONSEJSON::MESSAGE::WARNING Trying to set `message` on an Ok JSON => ignored")
+            warn!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::MESSAGE::WARNING Trying to set `message` on an Ok JSON => ignored")
         }
         self
     }
 
     /// Set the resource that we tried to access.
     /// For Error JSON only (does nothing if `success == ok`)
-    pub fn resource(mut self, string: String) -> ResponseJSON<'v> {
+    pub fn resource(mut self, string: String) -> ResponseJSON {
         if !self.success {
             self.resource = Some(string);
         } else {
-            warn!("::AMIWO::RESPONSEJSON::MESSAGE::WARNING Trying to set `resource` on an Ok JSON => ignored")
+            warn!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::RESOURCE::WARNING Trying to set `resource` on an Ok JSON => ignored")
         }
         self
     }
 
     /// Set the method that was used (GET, POST, ...).
     /// For Error JSON only (does nothing if `success == ok`)
-    pub fn method(mut self, string: String) -> ResponseJSON<'v> {
+    pub fn method(mut self, string: String) -> ResponseJSON {
         if !self.success {
             self.method = Some(string);
         } else {
-            warn!("::AMIWO::RESPONSEJSON::METHOD::WARNING Trying to set `method` on an Ok JSON => ignored")
+            warn!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::METHOD::WARNING Trying to set `method` on an Ok JSON => ignored")
         }
         self
     }
@@ -156,16 +131,16 @@ impl<'v> ResponseJSON<'v>
     /// ResponseJSON<T> can be created from a `serde_json::Value`, consuming the original object
     /// If the input is a valid ResponseJSON it duplicates it
     /// Else it creates an Ok ResponseJSON with it's data property set to the input JSON
-    fn from_serde_value(json: &'v Value) -> ResponseJSON<'v> {
+    pub fn from_serde_value(json: Value) -> ResponseJSON {
         if json.is_object() {
             if json.is_ok_json() {
                 ResponseJSON::ok()
                     .http_code(json["http_code"].as_u64().unwrap() as u16)
-                    .data(json.get("data").unwrap_or(&NULL))
+                    .data(json.get("data").unwrap_or(&Value::Null).clone())
             } else if json.is_error_json() {
                 let mut rjson = ResponseJSON::error()
                     .http_code(json["http_code"].as_u64().unwrap() as u16)
-                    .data(json.get("data").unwrap_or(&NULL));
+                    .data(json.get("data").unwrap_or(&Value::Null).clone());
 
                 if !json["message"].is_null() { rjson = rjson.message(json["message"].as_str().unwrap().to_string()); }
                 if !json["resource"].is_null() { rjson = rjson.resource(json["resource"].as_str().unwrap().to_string()); }
@@ -174,19 +149,63 @@ impl<'v> ResponseJSON<'v>
                 rjson
             } else {
                 ResponseJSON::ok()
-                    .data(json.pointer("").unwrap())
+                    .data(json.pointer("").unwrap().clone())
             }
         } else {
             ResponseJSON::ok()
-                .data(json.pointer("").unwrap())
+                .data(json.pointer("").unwrap().clone())
         }
+    }
+
+    /// Deserialize a ResponseJSON from a string of JSON text
+    pub fn from_str(s: & str) -> Result<ResponseJSON, serde_json::Error> {
+        serde_json::from_str(s)
+            .map( |value : Value| Self::from_serde_value(value) )
+    }
+
+    /// Deserialize a ResponseJSON from an IO stream of JSON
+    pub fn from_reader<R: Read>(reader: R) -> Result<ResponseJSON, serde_json::Error> {
+        serde_json::from_reader(reader)
+            .map( |value : Value| Self::from_serde_value(value) )
+    }
+  
+    /// Consumes the ResponseJSON wrapper and returns the wrapped item.
+    // Note: Contrary to `serde_json::to_string()`, serialization can't fail.
+    pub fn into_string(self) -> String {
+        self.to_string()
     }
 }
 
 // =======================================================================
 // TRAIT IMPLEMENTATION
 // ======================================================================
-impl<'v> IsResponseJSON for ResponseJSON<'v> {
+/// Serialize the given ResponseJSON as a String
+impl ToString for ResponseJSON {
+    // Note: Contrary to `serde_json::to_string()`, serialization can't fail.
+    fn to_string(&self) -> String {
+        json!({
+            "success": self.success,
+            "http_code": self.http_code,
+            "data": &self.data,
+            "message": &self.message,
+            "resource": &self.resource,
+            "method": &self.method
+        }).as_object_mut()
+        .map_or(
+            "{\"http_code\":500,\"message\":\"Invalid ResponseJSON\",\"success\":false}".to_string(),
+            |map| {
+                if map["data"].is_null() { map.remove("data"); };
+                if map["message"].is_null() { map.remove("message"); };
+                if map["resource"].is_null() { map.remove("resource"); };
+                if map["method"].is_null() { map.remove("method"); };
+
+                serde_json::to_string(map).unwrap()
+            }
+        )
+    }
+}
+
+impl IsResponseJSON for ResponseJSON {
     /// Check if the JSON described as a String is a valid ResponseJSON
     fn is_valid_json(&self) -> bool {
         true
@@ -313,66 +332,102 @@ impl IsResponseJSON for str {
     }
 }
 
-/*
-/// Implement Rocket's FormData to parse a ResponseJSON from incoming POST/... form data.
-///
-/// - If the content type of the request data is not
+/// Parse a ResponseJSON from incoming POST/... form data.
+/// If the content type of the request data is not
 /// `application/json`, `Forward`s the request.
 ///
 /// All relevant warnings and errors are written to the console
-impl<T: DeserializeOwned> FromData for ResponseJSON<T> {
-    type Error = serde_json::error::Error;
+impl FromData for ResponseJSON {
+    type Error = serde_json::Error;
 
-    fn from_data(request: &Request, data: Data) -> Outcome<Self, serde_json::error::Error> {
+    fn from_data(request: &Request, data: Data) -> Outcome<Self, serde_json::Error> {
         if !request.content_type().map_or(false, |ct| ct.is_json()) {
             error!("Content-Type is not JSON.");
-            return Outcome::Forward(data);
+            return rocket::Outcome::Forward(data);
         }
 
         let size_limit = rocket::config::active()
             .and_then(|c| c.extras.get("limits.json")) // TODO: remove placeholder when upgrading to rocket version > 0.2.6
             // .and_then(|c| c.limits.get("json") // In next version
             .and_then(|limit| limit.as_integer())
-            .unwrap_or(32768) as u64;
+            .unwrap_or(1 << 20) as u64; // default limit is 1MB for JSON
 
+        // ResponseJSON::from_reader(data.open().take(size_limit))
         serde_json::from_reader(data.open().take(size_limit))
-            .map(|val| JSON(val))
-            .map_err(|e| { error!("Couldn't parse JSON body: {:?}", e); e })
-            .into_outcome(Status::BadRequest)
-
+            .map( |value| ResponseJSON::from_serde_value(value) )
+            .map_err(|e| { error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Unable to create JSON from reader => {:?}", e); e })
+            .into_outcome()
     }
 }
-*/
 
-/*
-/// Serializes the wrapped value into JSON. Returns a response with Content-Type
+/// Serializes the wrapped value into a ResponseJSON. Returns a response with Content-Type
 /// JSON and a fixed-size body with the serialized value. If serialization
 /// fails, an `Err` of `Status::InternalServerError` is returned.
-impl<T: Serialize> Responder<'static> for JSON<T> {
-    fn respond(self) -> response::Result<'static> {
-        serde_json::to_string(&self.0).map(|string| {
-            content::JSON(string).respond().unwrap()
-        }).map_err(|e| {
-            error_!("JSON failed to serialize: {:?}", e);
-            Status::InternalServerError
-        })
+impl<'r> Responder<'r> for ResponseJSON {
+    fn respond(self) -> Result<Response<'r>, Status> {
+        content::JSON(self.into_string()).respond()
     }
 }
-*/
+
+impl<T: ToString> PartialEq<T> for ResponseJSON {
+    fn eq(&self, other: &T) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+macro_rules! __impl_rjson_partial_eq {
+    (to_string @ $other:ty) => { __impl_rjson_partial_eq!(to_string @ $other, ResponseJSON); };
+    (to_string @ $other:ty, <$($args:tt),* $(,)*> ) => { __impl_rjson_partial_eq!(to_string @ $other, ResponseJSON, [$($args),*]); };
+    (to_string @ $Lhs:ty, $Rhs:ty) => {
+        impl PartialEq<$Rhs> for $Lhs 
+            where 
+                $Lhs: ToString,
+                $Rhs: ToString
+        {
+            fn eq(&self, other: &$Rhs) -> bool {
+                self.to_string() == other.to_string()
+            }
+        }
+    };
+    (to_string @ $Lhs:ty, $Rhs:ty, [$($args:tt),* $(,)*] ) => { // Note: changed from '<>' to '[]' to avoid infinite macro recursion
+        impl<$($args),*> PartialEq<$Rhs> for $Lhs 
+            where 
+                $Lhs: ToString,
+                $Rhs: ToString
+        {
+            fn eq(&self, other: &$Rhs) -> bool {
+                self.to_string() == other.to_string()
+            }
+        }
+    };
+}
+
+__impl_rjson_partial_eq!(to_string @ Value);
+__impl_rjson_partial_eq!(to_string @ String);
+__impl_rjson_partial_eq!(to_string @ &'r str, <'r>);
 
 // =======================================================================
 // UNIT TESTS
 // =======================================================================
 #[cfg(test)]
 mod tests {
+    #![allow(non_snake_case)]
+    #![allow(unmounted_route)]
+
     use super::ResponseJSON;
     use super::IsResponseJSON;
+
     use serde_json;
     use serde_json::Value;
 
-    #[allow(non_snake_case)]
+    use rocket;
+    use rocket::testing::MockRequest;
+    use rocket::http::{ ContentType, Method, Status };
+
+    use contrib::rocket::FormHashMap;
+
     #[test]
-    fn test_IsResponseJSON_implem() {
+    fn ResponseJSON_test_IsResponseJSON_implem() {
         let json = r#"{
             "success": false,
             "http_code": 500,
@@ -417,9 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_ok() {
-        let data : Value = "Some data".into();
-
+    fn ResponseJSON_test_builder_ok() {
         let json : ResponseJSON = ResponseJSON::ok();
         assert_eq!(json.success, true);
         assert_eq!(json.http_code, 200);
@@ -430,7 +483,7 @@ mod tests {
 
         let json : ResponseJSON = ResponseJSON::ok()
             .http_code(201)
-            .data(&data)
+            .data("Some data".into())
             .method("GET".to_string())
             .resource("some path".to_string())
             .message("error message".to_string());
@@ -446,9 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_error() {
-        let data : Value = "Some data".into();
-
+    fn ResponseJSON_test_builder_error() {
         let json : ResponseJSON = ResponseJSON::error();
         assert_eq!(json.success, false);
         assert_eq!(json.http_code, 500);
@@ -459,7 +510,7 @@ mod tests {
 
         let json : ResponseJSON = ResponseJSON::error()
             .http_code(401)
-            .data(&data)
+            .data("Some data".into())
             .method("GET".to_string())
             .resource("some path".to_string())
             .message("error message".to_string());
@@ -475,14 +526,112 @@ mod tests {
     }
 
     #[test]
-    fn test_from_serde_json() {
+    fn ResponseJSON_test_from_str() {
+        // Simple non ResponseJSON
+        let json = ResponseJSON::from_str(r#"{
+            "test1": "value1",
+            "test2": "value2",
+            "test3": [ 1, 2, 3 ]
+        }"#).unwrap();
+        assert_eq!(json.is_valid_json(), true);
+        assert_eq!(json.is_ok_json(), true);
+        assert_eq!(json.is_error_json(), false);
+        assert_eq!(json.data["test2"], Value::String("value2".to_string()));
+
+        // ok json without data
+        let json = ResponseJSON::from_str(r#"{
+            "success": true,
+            "http_code": 204
+        }"#).unwrap();
+        assert_eq!(json.is_valid_json(), true);
+        assert_eq!(json.is_ok_json(), true);
+        assert_eq!(json.is_error_json(), false);
+        assert_eq!(json.http_code, 204);
+        assert_eq!(json.method.is_none(), true);
+        assert_eq!(json.resource.is_none(), true);
+        assert_eq!(json.message.is_none(), true);
+        assert_eq!(json.data.is_null(), true);
+
+        // improper ok json (yet still parsed but everything will be moved in data)
+        let json = ResponseJSON::from_str(r#"{
+            "success": true,
+            "http_code": 201,
+            "resource": "some resource requested",
+            "method": "GET",
+            "message": "error message"
+        }"#).unwrap();
+        assert_eq!(json.is_valid_json(), true);
+        assert_eq!(json.is_ok_json(), true);
+        assert_eq!(json.is_error_json(), false);
+        assert_eq!(json.http_code, 200);
+        assert_eq!(json.method.is_none(), true);
+        assert_eq!(json.resource.is_none(), true);
+        assert_eq!(json.message.is_none(), true);
+        let val : Value = serde_json::from_str("201").unwrap();
+        assert_eq!(json.data["http_code"], val);
+
+        // ok json with data
+        let json = ResponseJSON::from_str(r#"{
+            "success": true,
+            "http_code": 202,
+            "data": {
+                "test1": "value1",
+                "test2": "value2",
+                "test3": [ 1, 2, 3 ]
+            }
+        }"#).unwrap();
+        assert_eq!(json.is_valid_json(), true);
+        assert_eq!(json.is_ok_json(), true);
+        assert_eq!(json.is_error_json(), false);
+        assert_eq!(json.http_code, 202);
+        assert_eq!(json.data["test2"], Value::String("value2".to_string()));
+
+        // error json without data
+        let json = ResponseJSON::from_str(r#"{
+            "success": false,
+            "http_code": 501,
+            "resource": "some resource requested",
+            "method": "GET",
+            "message": "error message"
+        }"#).unwrap();
+        assert_eq!(json.is_valid_json(), true);
+        assert_eq!(json.is_ok_json(), false);
+        assert_eq!(json.is_error_json(), true);
+        assert_eq!(json.http_code, 501);
+        assert_eq!(json.resource.unwrap(), "some resource requested".to_string());
+
+        // error json with data
+        let json = ResponseJSON::from_str(r#"{
+            "success": false,
+            "http_code": 502,
+            "data": {
+                "test1": "value1",
+                "test2": "value2",
+                "test3": [ 1, 2, 3 ]
+            },
+            "resource": "some resource requested",
+            "method": "GET",
+            "message": "error message"
+        }"#).unwrap();
+        assert_eq!(json.data["test2"], Value::String("value2".to_string()));
+
+        assert_eq!(json.is_valid_json(), true);
+        assert_eq!(json.is_ok_json(), false);
+        assert_eq!(json.is_error_json(), true);
+        assert_eq!(json.http_code, 502);
+        assert_eq!(json.resource.unwrap(), "some resource requested".to_string());
+        assert_eq!(json.data["test1"], Value::String("value1".to_string()));
+    }
+
+    #[test]
+    fn ResponseJSON_test_from_serde_json() {
         // Simple non ResponseJSON
         let json = serde_json::from_str(r#"{
             "test1": "value1",
             "test2": "value2",
             "test3": [ 1, 2, 3 ]
         }"#).unwrap();
-        let rjson = ResponseJSON::from_serde_value(&json);
+        let rjson = ResponseJSON::from_serde_value(json);
         assert_eq!(rjson.is_valid_json(), true);
         assert_eq!(rjson.is_ok_json(), true);
         assert_eq!(rjson.is_error_json(), false);
@@ -493,7 +642,7 @@ mod tests {
             "success": true,
             "http_code": 204
         }"#).unwrap();
-        let rjson = ResponseJSON::from_serde_value(&json);
+        let rjson = ResponseJSON::from_serde_value(json);
         assert_eq!(rjson.is_valid_json(), true);
         assert_eq!(rjson.is_ok_json(), true);
         assert_eq!(rjson.is_error_json(), false);
@@ -511,7 +660,7 @@ mod tests {
             "method": "GET",
             "message": "error message"
         }"#).unwrap();
-        let rjson = ResponseJSON::from_serde_value(&json);
+        let rjson = ResponseJSON::from_serde_value(json);
         assert_eq!(rjson.is_valid_json(), true);
         assert_eq!(rjson.is_ok_json(), true);
         assert_eq!(rjson.is_error_json(), false);
@@ -532,7 +681,7 @@ mod tests {
                 "test3": [ 1, 2, 3 ]
             }
         }"#).unwrap();
-        let rjson = ResponseJSON::from_serde_value(&json);
+        let rjson = ResponseJSON::from_serde_value(json);
         assert_eq!(rjson.is_valid_json(), true);
         assert_eq!(rjson.is_ok_json(), true);
         assert_eq!(rjson.is_error_json(), false);
@@ -547,7 +696,7 @@ mod tests {
             "method": "GET",
             "message": "error message"
         }"#).unwrap();
-        let rjson = ResponseJSON::from_serde_value(&json);
+        let rjson = ResponseJSON::from_serde_value(json);
         assert_eq!(rjson.is_valid_json(), true);
         assert_eq!(rjson.is_ok_json(), false);
         assert_eq!(rjson.is_error_json(), true);
@@ -569,16 +718,177 @@ mod tests {
         }"#).unwrap();
         assert_eq!(json["data"]["test2"], Value::String("value2".to_string()));
 
-        let rjson = ResponseJSON::from_serde_value(&json);
+        let rjson = ResponseJSON::from_serde_value(json);
         assert_eq!(rjson.is_valid_json(), true);
         assert_eq!(rjson.is_ok_json(), false);
         assert_eq!(rjson.is_error_json(), true);
         assert_eq!(rjson.http_code, 502);
         assert_eq!(rjson.resource.unwrap(), "some resource requested".to_string());
         assert_eq!(rjson.data["test1"], Value::String("value1".to_string()));
-        // json should still be accessible
-        assert_eq!(json["data"]["test2"], Value::String("value2".to_string()));
+
+        // should not compile
+        // assert_eq!(json["data"]["test2"], Value::String("value2".to_string()));
     }
 
-    // TODO add test with POST & GET routes taking a ResponseJSON as param
+    #[test]
+    fn ResponseJSON_test_into_string() {
+        let json = ResponseJSON::ok()
+            .http_code(201)
+            .data("Some data".into());
+
+        let ref_json : Value = json!({
+            "success": true, 
+            "http_code": 201, 
+            "data": "Some data"
+        });
+
+        let string = json.into_string();
+        let test_json : Value = serde_json::from_str(&string).unwrap();
+        assert_eq!(ref_json, test_json);
+    }
+
+    #[test]
+    fn ResponseJSON_test_to_string() {
+        let json = ResponseJSON::ok()
+            .http_code(201)
+            .data("Some data".into());
+
+        let ref_json : Value = json!({
+            "success": true, 
+            "http_code": 201, 
+            "data": "Some data"
+        });
+        assert_eq!(json.to_string(), ref_json.to_string());
+        assert_eq!(json.is_ok_json(), true); // ensure value is not moved
+    }
+
+    #[test]
+    fn ResponseJSON_test_eq() {
+        let json = ResponseJSON::ok()
+            .http_code(201)
+            .data("Some data".into());
+
+        let ref_json : Value = json!({
+            "success": true, 
+            "http_code": 201, 
+            "data": "Some data"
+        });
+        assert_eq!(json, ref_json);
+        assert_eq!(ref_json, json);
+        assert_eq!(json, json);
+
+        let string = ref_json.to_string();
+        assert_eq!(json, string);
+        assert_eq!(string, json);
+
+        let str_slice : &str = string.as_ref();
+        assert_eq!(json, str_slice);
+        assert_eq!(str_slice, json);
+    }
+
+    #[test]
+    fn ResponseJSON_test_route_with_ok_response_json() {
+        let input_rjson = ResponseJSON::from_str(r#"{
+            "success": true,
+            "http_code": 200,
+            "data": {
+                "test1": "value1",
+                "test2": [ 1, 2, 3 ]
+            }
+        }"#).unwrap();
+
+        #[post("/test", data="<params>")]
+        fn test_route(params: ResponseJSON) -> &'static str {
+            assert_eq!(params.success, true);
+            assert_eq!(params.http_code, 200);
+            assert_eq!(params.data["test1"], Value::String("value1".to_string()));
+            "It's working !"
+        }
+
+        let rocket = rocket::ignite()
+            .mount("/post", routes![test_route]);
+
+        let mut req = MockRequest::new(Method::Post, "/post/test")
+            .header(ContentType::JSON)
+            .body(input_rjson.clone().to_string());
+
+        let mut response = req.dispatch_with(&rocket);
+        let body_str = response.body().and_then(|b| b.into_string());
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(body_str, Some("It's working !".to_string()));
+    }
+
+    #[test]
+    fn ResponseJSON_test_route_with_error_response_json() {
+        let input_rjson = ResponseJSON::from_str(r#"{
+            "success": false,
+            "http_code": 500,
+            "data": {
+                "test1": "value1",
+                "test2": [ 1, 2, 3 ]
+            },
+            "method": "GET",
+            "resource": "/back/test",
+            "message": "Unexpected error"
+        }"#).unwrap();
+
+        #[post("/test", data="<params>")]
+        fn test_route(params: ResponseJSON) -> &'static str {
+            assert_eq!(params.success, false);
+            assert_eq!(params.http_code, 500);
+            assert_eq!(params.method.unwrap(), "GET");
+            assert_eq!(params.resource.unwrap(), "/back/test");
+            assert_eq!(params.message.unwrap(), "Unexpected error");
+            "It's working !"
+        }
+
+        let rocket = rocket::ignite()
+            .mount("/post", routes![test_route]);
+
+        let mut req = MockRequest::new(Method::Post, "/post/test")
+            .header(ContentType::JSON)
+            .body(input_rjson.clone().to_string());
+
+        let mut response = req.dispatch_with(&rocket);
+        let body_str = response.body().and_then(|b| b.into_string());
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(body_str, Some("It's working !".to_string()));
+    }
+
+    #[test]
+    fn ResponseJSON_test_route_with_returned_response_json() {
+        #[get("/test?<params>")]
+        fn test_route(params: FormHashMap) -> ResponseJSON {
+            let json = json!({
+                "success": true,
+                "http_code": 200,
+                "data": {
+                    "message": params.get("message").unwrap().value()
+                }
+            });
+            ResponseJSON::from_serde_value(json)
+        }
+
+        let rocket = rocket::ignite()
+            .mount("/get", routes![test_route]);
+
+        let message = "hello_world";
+        let mut req = MockRequest::new(Method::Get, "/get/test?message=".to_string() + message);
+
+        let mut response = req.dispatch_with(&rocket);
+        let body_str = response.body().and_then(|b| b.into_string()).unwrap();
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(body_str, ResponseJSON::from_serde_value(json!({
+            "success": true,
+            "http_code": 200,
+            "data": {
+                "message": message
+            }
+        })));
+    }
+
+    // TODO add test with Errors being generated
 }   

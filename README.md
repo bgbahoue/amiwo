@@ -1,3 +1,5 @@
+[![Current Crates.io Version](https://img.shields.io/crates/v/amiwo.svg)](https://crates.io/crates/amiwo)
+
 # Amiwô - API Documentation
 Various utility types &amp; functions for Rust
 
@@ -8,4 +10,4 @@ This is very much a WIP project, derived from a similar work I did for Node.js
 - [Types](/types) - Various types commonly used.
 
 ## Release notes
-- v0.0.1 - added simple types::OneOrMany enum wraping a single value or vector of value; added types::rocket::FormHashMap type deriving [FormData](https://api.rocket.rs/rocket/data/trait.FromData.html) & [FromForm](https://api.rocket.rs/rocket/request/trait.FromForm.html) [Rocket](https://rocket.rs) types
+[See CHANGELOG.md](./CHANGELOG.md)
