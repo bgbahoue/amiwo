@@ -33,15 +33,27 @@
 
 #[macro_use] extern crate log;
 
+extern crate hyper;
+extern crate rocket;
 extern crate serde;
 #[macro_use] extern crate serde_json;
 
-// Contribution to third party modules
-//  - Rocket
-#[cfg(feature = "amiwo_rocket")]
-extern crate rocket;
-
 // Amiwo specific modules
-pub mod contrib;
-pub mod types;
+pub mod error;
+#[macro_use] pub mod macros;
 pub mod util;
+pub mod traits;
+pub mod types;
+
+pub mod contrib;
+
+// Errors, Types & Trait shortcuts
+pub use error::GenericError;
+
+pub use contrib::rocket::FormHashMap;
+
+pub use types::IsResponseJSON;
+pub use types::OneOrMany;
+pub use types::ResponseJSON;
+
+pub use traits::Pushable;

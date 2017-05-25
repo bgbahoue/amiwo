@@ -9,9 +9,12 @@
 // =======================================================================
 // LIBRARY IMPORTS
 // =======================================================================
+use std::clone::Clone;
 use std::ops::{ Index, IndexMut };
 
 use serde::{ Serialize, Serializer };
+
+use traits::Pushable;
 
 // =======================================================================
 // STRUCT & TRAIT DEFINITION
@@ -34,12 +37,36 @@ impl<T> OneOrMany<T> {
             OneOrMany::Many(ref vect) => vect.get(0),
         }
     }
-    
+
     /// Return a mutable value (if is OneOrMany::One) or the first value of the vector (if is OneOrMany::Many)
     pub fn value_mut<'v>(&'v mut self) -> Option<&'v mut T> {
         match *self {
             OneOrMany::One(ref mut val) => Some(val),
             OneOrMany::Many(ref mut vect) => vect.get_mut(0),
+        }
+    }
+
+    /// If the Value is `One` value, returns the associated value. Returns None otherwise.
+    pub fn as_one(&self) -> Option<&T> {
+        match *self {
+            OneOrMany::One(ref o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// If the Value is `Many` value, returns the associated vector. Returns None otherwise.
+    pub fn as_many(&self) -> Option<&Vec<T>> {
+        match *self {
+            OneOrMany::Many(ref vect) => Some(&*vect),
+            _ => None,
+        }
+    }
+
+    /// If the Value is `Many` value, returns the associated vector. Returns None otherwise.
+    pub fn as_many_mut(&mut self) -> Option<&mut Vec<T>> {
+        match *self {
+            OneOrMany::Many(ref mut vect) => Some(vect),
+            _ => None,
         }
     }
     
@@ -82,7 +109,28 @@ impl<T> OneOrMany<T> {
     }
 }
 
-/// Access an element of this type. Panics if the index is out of .
+/// Allow to push a new value into a mutable reference of OneOrMany
+///
+/// - If `self` was OneOrMany::One => converts it to OneOrMany::Many and appends the new value
+/// - If `self` was OneOrMany::Many => appends the new value
+impl<T> Pushable<T> for OneOrMany<T> 
+    where T: Clone
+{
+    fn push(&mut self, new_value: T) -> &mut Self {
+        let mut vect : Vec<T> = Vec::new();
+
+        if self.is_one() {
+            vect.push(self.value().unwrap().clone());
+        } else {
+            vect.append(self.as_many_mut().unwrap());
+        }
+        vect.push(new_value);
+        ::std::mem::replace(self, OneOrMany::Many(vect));
+        self
+    }
+}
+
+/// Access an element of this type. Panics if the index is out of bounds
 impl<T> Index<usize> for OneOrMany<T> {
     type Output = T;
 
@@ -99,7 +147,7 @@ impl<T> Index<usize> for OneOrMany<T> {
     }
 }
 
-/// Access an element of this type in a mutable context. Panics if the index is out of .
+/// Access an element of this type in a mutable context. Panics if the index is out of bounds
 impl<T> IndexMut<usize> for OneOrMany<T> {
     fn index_mut(&mut self, index: usize) -> &mut T {
         match *self {
@@ -219,6 +267,7 @@ mod tests {
     #![allow(non_snake_case)]
 
     use super::OneOrMany;
+    use traits::Pushable;
 
     #[test]
     fn OneOrMany_test_one() {
@@ -345,5 +394,16 @@ mod tests {
 
         assert_eq!(OneOrMany::One("test &str"), vec!["test &str"]);
         assert_eq!(vec!["test &str"], OneOrMany::One("test &str"));
+    }
+
+    #[test]
+    fn OneOrMany_test_pushable() {
+        let mut x = OneOrMany::One(17);
+        x.push(18);
+        assert_eq!(x, OneOrMany::Many(vec![17, 18]));
+
+        let mut x = OneOrMany::Many(vec!["a", "b"]);
+        x.push("c").push("d");
+        assert_eq!(x, OneOrMany::Many(vec!["a", "b", "c", "d"]));
     }
 }
