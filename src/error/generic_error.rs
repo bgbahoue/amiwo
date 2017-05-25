@@ -34,6 +34,15 @@ pub enum GenericError {
 // =======================================================================
 // STRUCT IMPLEMENTATION
 // =======================================================================
+impl GenericError {
+    pub fn new_compound<T: ToString>(desc: T, err: GenericError) -> GenericError {
+        let mut description = desc.to_string();
+        description.push_str(" caused by ");
+        description.push_str(err.description());
+        GenericError::Compound((description, Box::new(err)))
+    }
+}
+
 impl Error for GenericError {
     fn description(&self) -> &str {
         match *self {
@@ -41,8 +50,7 @@ impl Error for GenericError {
             GenericError::Io(ref err) => err.description(),
             GenericError::Serde(ref err) => err.description(),
             GenericError::Rocket(_) => "Rocket Error - not implementing Error yet",
-            GenericError::Compound((ref description, ref err)) => err.description(), // TODO: append self.0
-                // err.description(), //format!("{} caused by {}", description, err.description()).as_ref(), // temp value doesn't live long enough
+            GenericError::Compound((ref description, _)) => description,
             GenericError::Basic(ref err) => err.as_ref(),
         }
     }
@@ -67,6 +75,31 @@ impl fmt::Display for GenericError{
             GenericError::Serde(ref err) => fmt::Display::fmt(err, f),
             // GenericError::Rocket(ref err) => fmt::Display::fmt(err, f),
             _ => f.write_str(self.description()),
+        }
+    }
+}
+
+// =======================================================================
+// UNIT TESTS
+// =======================================================================
+#[cfg(test)]
+mod tests {
+    #![allow(non_snake_case)]
+
+    use std::error::Error;
+    use super::GenericError;
+
+    #[test]
+    fn GenericError_test_compound() {
+        let err = GenericError::new_compound("test description", GenericError::Basic("Test error".to_string()));
+        assert_eq!(err.description(), "test description caused by Test error");
+
+        match err.cause() {
+            Some(err) => {
+                assert_eq!(err.description(), "Test error");
+                assert!(err.cause().is_none());
+            },
+            _ => panic!("invalid cause"),
         }
     }
 }

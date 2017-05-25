@@ -21,7 +21,7 @@ macro_rules! hyper_request {
 
 macro_rules! amiwo_error {
     ($description:expr, $cause:expr) => {
-        Err(GenericError::Compound(($description, Box::new($cause))))
+        Err(GenericError::new_compound($description, $cause))
     };
     ($error:expr) => {
         Err(GenericError::Basic($error))
