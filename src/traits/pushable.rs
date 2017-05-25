@@ -36,16 +36,20 @@ impl<T> Pushable<T> for Vec<T> {
 /// - If `self` is a `Value::Array` => appends the new value 
 impl Pushable<Value> for Value {
     fn push(&mut self, new_value: Value) -> &mut Self {
-        let mut vect = Vec::new();
-
-        match *self {
-            Value::Array(ref mut existing_vect) => vect.append(existing_vect),
-            Value::Null => (), // do nothing
-            ref existing_value @ _ => vect.push(existing_value.clone()),
+        if self.is_null() {
+            ::std::mem::replace(self, new_value);
+            self
+        } else {
+            let mut vect = Vec::new();
+            match *self {
+                Value::Array(ref mut existing_vect) => vect.append(existing_vect),
+                Value::Null => (), // do nothing
+                ref existing_value @ _ => vect.push(existing_value.clone()),
+            }
+            vect.push(new_value);
+            ::std::mem::replace(self, Value::Array(vect));
+            self
         }
-        vect.push(new_value);
-        ::std::mem::replace(self, Value::Array(vect));
-        self
     }
 }
 
@@ -93,9 +97,15 @@ mod tests {
     #![allow(non_snake_case)]
 
     use super::Pushable;
+    use serde_json::Value;
 
     #[test]
     fn Pushable_test_value() {
+        let mut x = Value::Null;
+        x.push("a");
+        assert!(!x.is_array());
+        assert_eq!(x, json!("a"));
+
         let mut x = json!("a");
         x.push("b");
         assert_eq!(x, json!(["a", "b"]));
