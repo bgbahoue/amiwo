@@ -10,6 +10,7 @@
 // =======================================================================
 // MACRO DEFINITIONS
 // =======================================================================
+#[cfg(feature = "amiwo_hyper")]
 macro_rules! hyper_request {
     ($method:path, $url:expr) => {
         Client::new().request($method, $url).send()
