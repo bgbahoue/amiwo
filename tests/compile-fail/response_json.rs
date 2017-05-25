@@ -1,7 +1,7 @@
 extern crate amiwo;
 
-use amiwo::contrib::rocket::ResponseJSON;
-use amiwo::contrib::rocket::IsResponseJSON;
+use amiwo::ResponseJSON;
+use amiwo::IsResponseJSON;
 
 fn test_moved_value() {
     let x = ResponseJSON::ok();

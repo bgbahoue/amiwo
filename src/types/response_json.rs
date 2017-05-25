@@ -20,10 +20,10 @@ use rocket::data::{ FromData, Outcome };
 use rocket::http::Status;
 use rocket::outcome::IntoOutcome;
 use rocket::response::Responder;
-
 use serde_json;
 use serde_json::Value;
 
+use error::GenericError;
 use util::ContainsKeys;
 
 // =======================================================================
@@ -158,15 +158,17 @@ impl ResponseJSON {
     }
 
     /// Deserialize a ResponseJSON from a string of JSON text
-    pub fn from_str(s: & str) -> Result<ResponseJSON, serde_json::Error> {
+    pub fn from_str<'s>(s: &'s str) -> Result<ResponseJSON, GenericError> {
         serde_json::from_str(s)
             .map( |value : Value| Self::from_serde_value(value) )
+            .map_err( |serde_err| GenericError::Serde(serde_err) )
     }
 
     /// Deserialize a ResponseJSON from an IO stream of JSON
-    pub fn from_reader<R: Read>(reader: R) -> Result<ResponseJSON, serde_json::Error> {
+    pub fn from_reader<R: Read>(reader: R) -> Result<ResponseJSON, GenericError> {
         serde_json::from_reader(reader)
             .map( |value : Value| Self::from_serde_value(value) )
+            .map_err( |serde_err| GenericError::Serde(serde_err) )
     }
   
     /// Consumes the ResponseJSON wrapper and returns the wrapped item.
@@ -338,11 +340,11 @@ impl IsResponseJSON for str {
 ///
 /// All relevant warnings and errors are written to the console
 impl FromData for ResponseJSON {
-    type Error = serde_json::Error;
+    type Error = GenericError;
 
-    fn from_data(request: &Request, data: Data) -> Outcome<Self, serde_json::Error> {
+    fn from_data<'r>(request: &'r Request, data: Data) -> Outcome<Self, GenericError> {
         if !request.content_type().map_or(false, |ct| ct.is_json()) {
-            error!("Content-Type is not JSON.");
+            error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Content-Type is not JSON.");
             return rocket::Outcome::Forward(data);
         }
 
@@ -354,8 +356,8 @@ impl FromData for ResponseJSON {
 
         // ResponseJSON::from_reader(data.open().take(size_limit))
         serde_json::from_reader(data.open().take(size_limit))
+            .map_err(|serde_err| { error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Unable to create JSON from reader => {:?}", serde_err); GenericError::Serde(serde_err) })
             .map( |value| ResponseJSON::from_serde_value(value) )
-            .map_err(|e| { error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Unable to create JSON from reader => {:?}", e); e })
             .into_outcome()
     }
 }
@@ -865,7 +867,7 @@ mod tests {
                 "success": true,
                 "http_code": 200,
                 "data": {
-                    "message": params.get("message").unwrap().value()
+                    "message": params["message"]
                 }
             });
             ResponseJSON::from_serde_value(json)
@@ -881,7 +883,7 @@ mod tests {
         let body_str = response.body().and_then(|b| b.into_string()).unwrap();
 
         assert_eq!(response.status(), Status::Ok);
-        assert_eq!(body_str, ResponseJSON::from_serde_value(json!({
+        assert_eq!(ResponseJSON::from_str(&body_str).unwrap(), ResponseJSON::from_serde_value(json!({
             "success": true,
             "http_code": 200,
             "data": {
