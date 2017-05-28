@@ -1,7 +1,7 @@
 //! Utility functions for `hyper` crate
 //!
-//! Creates a few utility function to create ResponseJSON from Hyper Response
-//!
+//! Creates a few utility function to create ResponseJSON from Hyper Response.
+//! 
 //! Also implements `Into<Result<ResponseJSON, GenericError>>` for `Result<hyper::client::response::Response>` and `hyper::client::response::Response` to allow simple chaining 
 //!
 
@@ -35,26 +35,4 @@ pub fn request(method: &str, url: &str) -> Result<ResponseJSON, GenericError> {
     Client::new().request(hyper_method.unwrap(), hyper_url.unwrap()).send()
     .map_err(|hyper_error| GenericError::Hyper(hyper_error))
     .and_then(|response| ResponseJSON::from_reader(response))
-}
-
-// =======================================================================
-// TRAIT IMPLEMENTATION
-// =======================================================================
-
-// =======================================================================
-// UNIT TESTS
-// =======================================================================
-#[cfg(test)]
-mod tests {
-    #![allow(non_snake_case)]
-
-    use types::ResponseJSON;
-
-    use super::request;
-
-    #[test]
-    fn macros_test_hyper_request() {
-        let rjson : Result<ResponseJSON,_> = request("Get", "http://localhost:9876/test/back/hello");
-        println!("Response = {:?}", rjson);
-    }
 }
