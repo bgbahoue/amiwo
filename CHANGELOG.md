@@ -3,6 +3,7 @@
 - Added `Pushable` trait and associated implementations for `serde_json::Value`
 - Refactored `FormHashMap` using 'serde_json::Value' instead of HashMap => now returns 'Value' instead of 'OneOrMany' types. FormHashMap can now parse 'application/json' data
 - Added utility function to `contrib/hyper` to create request and parse Response into ResponseJSON
+- Updated for 2017-05-26 nightly.
 
 # Version 0.1.0 (May 19, 2017)
 - Created `amiwo::contrib` to hold contribution to other crates (currently rocket); moved `FormHashMap` to that module
