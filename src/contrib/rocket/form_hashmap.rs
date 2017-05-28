@@ -5,7 +5,7 @@
 //! Version: 2.0
 //!
 //! ## Release notes
-//! - v1.1 : refactored using serde_json Map & Value
+//! - v2.0 : refactored using serde_json Map & Value
 //! - v1.1 : implemented Index trait, renamed old `new()` method into `from_application_data`, added method `from_json_data`
 //! - v1.0 : creation
 
