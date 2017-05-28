@@ -10,8 +10,11 @@
 // =======================================================================
 // LIBRARY IMPORTS
 // =======================================================================
+use std::error::Error;
 use std::io::Read;
 use std::string::ToString;
+
+use hyper;
 
 use rocket;
 use rocket::{ Data, Request, Response };
@@ -207,6 +210,64 @@ impl ToString for ResponseJSON {
     }
 }
 
+/// Parse a ResponseJSON from incoming POST/... form data.
+/// If the content type of the request data is not
+/// `application/json`, `Forward`s the request.
+///
+/// All relevant warnings and errors are written to the console
+impl FromData for ResponseJSON {
+    type Error = GenericError;
+
+    fn from_data<'r>(request: &'r Request, data: Data) -> Outcome<Self, GenericError> {
+        if !request.content_type().map_or(false, |ct| ct.is_json()) {
+            error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Content-Type is not JSON.");
+            return rocket::Outcome::Forward(data);
+        }
+
+        let size_limit = rocket::config::active()
+            .and_then(|c| c.extras.get("limits.json")) // TODO: remove placeholder when upgrading to rocket version > 0.2.6
+            // .and_then(|c| c.limits.get("json") // In next version
+            .and_then(|limit| limit.as_integer())
+            .unwrap_or(1 << 20) as u64; // default limit is 1MB for JSON
+
+        // ResponseJSON::from_reader(data.open().take(size_limit))
+        serde_json::from_reader(data.open().take(size_limit))
+            .map_err(|serde_err| { error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Unable to create JSON from reader => {:?}", serde_err); GenericError::Serde(serde_err) })
+            .map( |value| ResponseJSON::from_serde_value(value) )
+            .into_outcome()
+    }
+}
+
+/// Serializes the wrapped value into a ResponseJSON. Returns a response with Content-Type
+/// JSON and a fixed-size body with the serialized value. If serialization
+/// fails, an `Err` of `Status::InternalServerError` is returned.
+impl<'r> Responder<'r> for ResponseJSON {
+    fn respond(self) -> Result<Response<'r>, Status> {
+        content::JSON(self.into_string()).respond()
+    }
+}
+
+/// Sugar to convert a valid Hyper Response into a ResponseJSON
+/// Since `From` can't fail it will return an error ResponseJSON when it can't parse
+/// it's body into a valid ResponseJSON
+///
+/// ```rust
+/// extern crate hyper;
+/// extern crate amiwo;
+///
+/// hyper::client::Client::new()
+///     .get("http://some/url")
+///     .send()
+///     .map(::std::convert::From::from)
+///     .map(|json : amiwo::ResponseJSON| println!("JSON received from request = {:?}", json) );
+/// ```
+impl From<hyper::client::response::Response> for ResponseJSON {
+    fn from(response: hyper::client::response::Response) -> Self {
+        ResponseJSON::from_reader(response)
+            .unwrap_or_else( |err| ResponseJSON::error().data(Value::String(format!("Error converting response into a ResponseJSON > {}", err.description()))) )
+    }
+}
+
 impl IsResponseJSON for ResponseJSON {
     /// Check if the JSON described as a String is a valid ResponseJSON
     fn is_valid_json(&self) -> bool {
@@ -331,43 +392,6 @@ impl IsResponseJSON for str {
                 false,
                 |json : Value| json.is_error_json()
             )
-    }
-}
-
-/// Parse a ResponseJSON from incoming POST/... form data.
-/// If the content type of the request data is not
-/// `application/json`, `Forward`s the request.
-///
-/// All relevant warnings and errors are written to the console
-impl FromData for ResponseJSON {
-    type Error = GenericError;
-
-    fn from_data<'r>(request: &'r Request, data: Data) -> Outcome<Self, GenericError> {
-        if !request.content_type().map_or(false, |ct| ct.is_json()) {
-            error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Content-Type is not JSON.");
-            return rocket::Outcome::Forward(data);
-        }
-
-        let size_limit = rocket::config::active()
-            .and_then(|c| c.extras.get("limits.json")) // TODO: remove placeholder when upgrading to rocket version > 0.2.6
-            // .and_then(|c| c.limits.get("json") // In next version
-            .and_then(|limit| limit.as_integer())
-            .unwrap_or(1 << 20) as u64; // default limit is 1MB for JSON
-
-        // ResponseJSON::from_reader(data.open().take(size_limit))
-        serde_json::from_reader(data.open().take(size_limit))
-            .map_err(|serde_err| { error!("::AMIWO::CONTRIB::ROCKET::RESPONSEJSON::FROM_DATA::ERROR Unable to create JSON from reader => {:?}", serde_err); GenericError::Serde(serde_err) })
-            .map( |value| ResponseJSON::from_serde_value(value) )
-            .into_outcome()
-    }
-}
-
-/// Serializes the wrapped value into a ResponseJSON. Returns a response with Content-Type
-/// JSON and a fixed-size body with the serialized value. If serialization
-/// fails, an `Err` of `Status::InternalServerError` is returned.
-impl<'r> Responder<'r> for ResponseJSON {
-    fn respond(self) -> Result<Response<'r>, Status> {
-        content::JSON(self.into_string()).respond()
     }
 }
 
