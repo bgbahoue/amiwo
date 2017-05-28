@@ -50,6 +50,7 @@ pub mod contrib;
 // Errors, Types & Trait shortcuts
 pub use error::GenericError;
 
+#[cfg(feature = "amiwo_rocket")]
 pub use contrib::rocket::FormHashMap;
 
 pub use types::IsResponseJSON;

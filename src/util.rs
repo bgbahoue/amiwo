@@ -1,7 +1,6 @@
 // =======================================================================
 // LIBRARY IMPORTS
 // =======================================================================
-#[cfg(feature = "amiwo_serde")]
 use serde_json;
 
 use std::borrow::Borrow;
@@ -21,7 +20,6 @@ pub trait ContainsKeys<K> {
 // =======================================================================
 // TRAIT IMPLEMENTATION
 // =======================================================================
-#[cfg(feature = "amiwo_serde")]
 impl ContainsKeys<String> for serde_json::Value {
     fn contains_keys<Q: ?Sized>(&self, keys: &[&Q]) -> bool 
         where
@@ -35,7 +33,6 @@ impl ContainsKeys<String> for serde_json::Value {
     }
 }
 
-#[cfg(feature = "amiwo_serde")]
 impl ContainsKeys<String> for serde_json::map::Map<String, serde_json::Value> {
     fn contains_keys<Q: ?Sized>(&self, keys: &[&Q]) -> bool 
         where
