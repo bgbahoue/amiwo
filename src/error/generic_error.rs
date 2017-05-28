@@ -1,9 +1,10 @@
 //! File holding the GenericError type
 //!
 //! Author: [Boris](mailto:boris@humanenginuity.com)
-//! Version: 1.0
+//! Version: 1.1
 //!
 //! ## Release notes
+//! - v1.1 : added From implementation (as per book guideline to use with the `try!` macro)
 //! - v1.0 : creation
 
 // =======================================================================
@@ -76,6 +77,37 @@ impl fmt::Display for GenericError{
             // GenericError::Rocket(ref err) => fmt::Display::fmt(err, f),
             _ => f.write_str(self.description()),
         }
+    }
+}
+
+// Implement `From` as per book guideline -> https://doc.rust-lang.org/book/error-handling.html#the-from-trait
+impl From<HyperError> for GenericError {
+    fn from(err: HyperError) -> GenericError {
+        GenericError::Hyper(err)
+    }
+}
+
+impl From<IOError> for GenericError {
+    fn from(err: IOError) -> GenericError {
+        GenericError::Io(err)
+    }
+}
+
+impl From<RocketError> for GenericError {
+    fn from(err: RocketError) -> GenericError {
+        GenericError::Rocket(err)
+    }
+}
+
+impl From<SerdeError> for GenericError {
+    fn from(err: SerdeError) -> GenericError {
+        GenericError::Serde(err)
+    }
+}
+
+impl From<String> for GenericError {
+    fn from(err: String) -> GenericError {
+        GenericError::Basic(err)
     }
 }
 
