@@ -72,10 +72,10 @@ impl<'s> FormHashMap<'s> {
         let long_lived_string: &'s str = unsafe {
             ::std::mem::transmute(form_string.as_str())
         };
-        let items = FormItems::from(long_lived_string);
+        let mut items = FormItems::from(long_lived_string);
 
         // Handle parsing or decode errors
-        let parsing_errors: Vec<_> = FormItems::from(long_lived_string)
+        let parsing_errors: Vec<_> = items.by_ref()
             .map(|(key, value)| (key, String::from_form_value(value)))
             .filter(|&(_, ref decoded_value)| decoded_value.is_err())
             .collect();
