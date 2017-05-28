@@ -1,6 +1,6 @@
 [package]
 name = "amiwo"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Boris <boris@humanenginuity.com>"]
 description = "Various utility types & functions for Rust. Named after a famous Beninese dish"
 repository = "https://github.com/bgbahoue/amiwo"
